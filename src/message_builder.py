@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from stock_client import fetch_quotes
+from stock_client import StockClientError, fetch_quotes
 
 
 STOCKS_FILE_PATH = Path(__file__).resolve().parent.parent / "config" / "stocks.txt"
@@ -36,7 +36,10 @@ def build_message() -> str:
     """
     now = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S JST")
     symbols = load_symbols()
-    quotes = fetch_quotes(symbols)
+    try:
+        quotes = fetch_quotes(symbols)
+    except StockClientError as exc:
+        return f"[株価通知] {now}\n株価の取得に失敗しました。\n{exc}"
 
     lines = [f"[株価通知] {now}"]
     for quote in quotes:

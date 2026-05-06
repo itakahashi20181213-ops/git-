@@ -1,9 +1,12 @@
 from dataclasses import dataclass
+import time
 from typing import List
 
 import requests
 
 YAHOO_QUOTE_API = "https://query1.finance.yahoo.com/v7/finance/quote"
+MAX_RETRIES = 4
+RETRY_SECONDS = 5
 
 
 @dataclass
@@ -24,11 +27,23 @@ def fetch_quotes(symbols: List[str]) -> List[StockQuote]:
     if not symbols:
         raise StockClientError("銘柄が登録されていません。")
 
-    response = requests.get(
-        YAHOO_QUOTE_API,
-        params={"symbols": ",".join(symbols)},
-        timeout=20,
-    )
+    headers = {"User-Agent": "line-stock-notifier/1.0"}
+    response: requests.Response | None = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        response = requests.get(
+            YAHOO_QUOTE_API,
+            params={"symbols": ",".join(symbols)},
+            headers=headers,
+            timeout=20,
+        )
+        if response.status_code != 429:
+            break
+        if attempt < MAX_RETRIES:
+            time.sleep(RETRY_SECONDS * attempt)
+
+    if response is None:
+        raise StockClientError("株価取得レスポンスの生成に失敗しました。")
+
     if response.status_code >= 400:
         raise StockClientError(
             f"株価取得に失敗しました: {response.status_code} {response.text}"
