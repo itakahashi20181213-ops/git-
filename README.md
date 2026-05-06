@@ -1,10 +1,12 @@
-# LINE送信システム（クラウド実行 / Git運用）
+# LINE株価通知システム（クラウド実行 / Git運用）
 
-後から通知内容を差し替えできるように、以下の構成で作成しています。
+登録した銘柄の株価を定期送信できるように、以下の構成で作成しています。
 
-- `src/message_builder.py`: 送る情報を組み立てる場所（今後ここを変更）
+- `src/message_builder.py`: 通知本文を組み立てる
+- `src/stock_client.py`: 株価情報の取得（Yahoo Finance）
 - `src/line_client.py`: LINE Messaging APIへ送信
 - `src/main.py`: 実行エントリーポイント
+- `config/stocks.txt`: 登録銘柄リスト（1行1銘柄）
 - `.github/workflows/line-notify.yml`: GitHub Actions でのクラウド実行設定
 
 ## 事前準備（LINE側）
@@ -19,6 +21,7 @@
 
 - `LINE_CHANNEL_ACCESS_TOKEN`
 - `LINE_TO`
+- （任意）`STOCK_SYMBOLS`（カンマ区切り。例: `7203.T,6758.T,AAPL`）
 
 ## 実行方法
 
@@ -33,9 +36,23 @@
 pip install -r requirements.txt
 $env:LINE_CHANNEL_ACCESS_TOKEN="YOUR_TOKEN"
 $env:LINE_TO="YOUR_USER_OR_GROUP_ID"
+# 任意: ファイルより優先して銘柄を指定
+# $env:STOCK_SYMBOLS="7203.T,6758.T,AAPL"
 python src/main.py
 ```
 
-## 送信内容の変更
+## 銘柄の登録方法
 
-今後「何の情報を送るか」が決まったら、`src/message_builder.py` の `build_message()` を置き換えるだけで対応できます。
+### 方法1（推奨）
+
+`config/stocks.txt` に1行ずつ銘柄コードを記載します。
+
+```txt
+7203.T
+6758.T
+AAPL
+```
+
+### 方法2（Secrets）
+
+GitHub Secrets の `STOCK_SYMBOLS` を使うと、`config/stocks.txt` より優先されます。
