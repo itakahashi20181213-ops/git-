@@ -9,7 +9,7 @@ from typing import Any
 import requests
 from fastapi import FastAPI, Header, HTTPException, Request
 
-from line_client import reply_line_message
+from src.line_client import reply_line_message
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STOCKS_FILE = ROOT_DIR / "config" / "stocks.txt"
