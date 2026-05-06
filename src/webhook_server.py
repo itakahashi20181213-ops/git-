@@ -190,6 +190,11 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"status": "ok", "message": "line webhook server running"}
+
+
 @app.post("/callback")
 async def callback(
     request: Request,
