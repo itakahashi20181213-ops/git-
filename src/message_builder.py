@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -7,6 +8,7 @@ from stock_client import StockClientError, fetch_quotes
 
 
 STOCKS_FILE_PATH = Path(__file__).resolve().parent.parent / "config" / "stocks.txt"
+SETTINGS_FILE_PATH = Path(__file__).resolve().parent.parent / "config" / "settings.json"
 
 
 def load_symbols() -> list[str]:
@@ -29,23 +31,75 @@ def load_symbols() -> list[str]:
     return symbols
 
 
-def build_message() -> str:
+def load_threshold_percent() -> float:
+    raw = os.getenv("CHANGE_THRESHOLD_PERCENT", "").strip()
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            pass
+
+    if SETTINGS_FILE_PATH.exists():
+        try:
+            data = json.loads(SETTINGS_FILE_PATH.read_text(encoding="utf-8"))
+            value = float(data.get("change_threshold_percent", 2.0))
+            return max(0.0, value)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return 2.0
+    return 2.0
+
+
+def build_message() -> str | None:
     """
     LINEに送る本文を生成する。
     ここだけ差し替えれば、送信内容を自由に変更できる。
     """
     now = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S JST")
     symbols = load_symbols()
+    threshold = load_threshold_percent()
     try:
         quotes = fetch_quotes(symbols)
     except StockClientError as exc:
-        return f"[株価通知] {now}\n株価の取得に失敗しました。\n{exc}"
+        return f"📈 株価通知\n🕒 {now}\n\n⚠️ 株価の取得に失敗しました。\n{exc}"
 
-    lines = [f"[株価通知] {now}"]
+    hits = []
     for quote in quotes:
-        sign = "+" if quote.change >= 0 else ""
+        if abs(quote.change_percent) < threshold:
+            continue
+        hits.append(quote)
+
+    if not hits:
+        return None
+
+    # 変動率が大きい順に並べると重要銘柄を先頭で確認しやすい
+    hits.sort(key=lambda q: abs(q.change_percent), reverse=True)
+
+    up_count = sum(1 for q in hits if q.change >= 0)
+    down_count = len(hits) - up_count
+
+    lines = [
+        "📈 株価通知",
+        f"🕒 {now}",
+        f"🎯 しきい値: ±{threshold:.2f}% 以上",
+        f"🟢 上昇 {up_count} / 🔴 下落 {down_count}",
+        "",
+    ]
+
+    for quote in hits:
+        if quote.change > 0:
+            icon = "🟢"
+            direction = "▲"
+        elif quote.change < 0:
+            icon = "🔴"
+            direction = "▼"
+        else:
+            icon = "⚪"
+            direction = "→"
+
         lines.append(
-            f"{quote.symbol} ({quote.short_name}) {quote.price:.2f} {quote.currency} "
-            f"({sign}{quote.change:.2f}, {sign}{quote.change_percent:.2f}%)"
+            f"{icon} {quote.symbol} ({quote.short_name})\n"
+            f"  現在値: {quote.price:.2f} {quote.currency}\n"
+            f"  前日比: {direction} {abs(quote.change):.2f} ({quote.change_percent:+.2f}%)"
         )
+
     return "\n".join(lines)
