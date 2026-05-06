@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 from pathlib import Path
+import re
 from typing import Any
 
 import requests
@@ -135,15 +136,19 @@ def _handle_command(text: str) -> str:
     if not command:
         return _help_text()
 
-    if command == "一覧":
+    # 全角スペースを含む空白を半角スペースに正規化
+    normalized = re.sub(r"\s+", " ", command.replace("\u3000", " ")).strip()
+    lower = normalized.lower()
+
+    if normalized in ("一覧", "list"):
         symbols = _load_symbols()
         threshold = _load_threshold()
         if not symbols:
             return f"登録銘柄はありません。\nしきい値: {threshold:.2f}%"
         return "登録銘柄:\n" + "\n".join(symbols) + f"\nしきい値: {threshold:.2f}%"
 
-    if command.startswith("追加 "):
-        symbol = command[3:].strip().upper()
+    if normalized.startswith("追加 ") or lower.startswith("add "):
+        symbol = normalized.split(" ", 1)[1].strip().upper()
         if not symbol:
             return "追加する銘柄コードを指定してください。例: 追加 7203.T"
         symbols = _load_symbols()
@@ -154,8 +159,8 @@ def _handle_command(text: str) -> str:
         _sync_to_github()
         return f"{symbol} を追加しました。"
 
-    if command.startswith("削除 "):
-        symbol = command[3:].strip().upper()
+    if normalized.startswith("削除 ") or lower.startswith("remove "):
+        symbol = normalized.split(" ", 1)[1].strip().upper()
         symbols = _load_symbols()
         if symbol not in symbols:
             return f"{symbol} は登録されていません。"
@@ -164,8 +169,8 @@ def _handle_command(text: str) -> str:
         _sync_to_github()
         return f"{symbol} を削除しました。"
 
-    if command.startswith("しきい値 "):
-        raw = command[5:].strip()
+    if normalized.startswith("しきい値 ") or lower.startswith("threshold "):
+        raw = normalized.split(" ", 1)[1].strip()
         try:
             value = float(raw)
         except ValueError:
@@ -174,10 +179,10 @@ def _handle_command(text: str) -> str:
         _sync_to_github()
         return f"しきい値を {max(0.0, value):.2f}% に更新しました。"
 
-    if command in ("ヘルプ", "help", "HELP"):
+    if normalized in ("ヘルプ", "help"):
         return _help_text()
 
-    return "コマンドを認識できませんでした。\n" + _help_text()
+    return f"コマンドを認識できませんでした: {command}\n" + _help_text()
 
 
 @app.get("/health")
