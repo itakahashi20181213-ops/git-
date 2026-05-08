@@ -64,6 +64,8 @@ def build_message() -> str | None:
     """
     now = _now_jst_text()
     symbols = load_symbols()
+    if not symbols:
+        return None
     threshold = load_threshold_percent()
     try:
         quotes = fetch_quotes(symbols)
