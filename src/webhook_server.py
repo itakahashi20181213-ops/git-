@@ -11,6 +11,7 @@ import requests
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from src.line_client import reply_line_message
+from src.stock_client import StockClientError, fetch_quotes
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STOCKS_FILE = ROOT_DIR / "config" / "stocks.txt"
@@ -125,8 +126,11 @@ def _help_text() -> str:
     return (
         "コマンド一覧\n"
         "追加（次のメッセージで銘柄コード）\n"
+        "削除（次のメッセージで銘柄コード）\n"
+        "株価（次のメッセージで銘柄コード）\n"
         "追加 7203.T\n"
         "削除 7203.T\n"
+        "株価 7203.T\n"
         "一覧\n"
         "しきい値 2.0\n"
         "キャンセル\n"
@@ -142,6 +146,37 @@ def _add_symbol(symbol: str) -> str:
     _save_symbols(symbols)
     _sync_to_github()
     return f"{symbol} を追加しました。"
+
+
+def _remove_symbol(symbol: str) -> str:
+    symbols = _load_symbols()
+    if symbol not in symbols:
+        return f"{symbol} は登録されていません。"
+    symbols = [s for s in symbols if s != symbol]
+    _save_symbols(symbols)
+    _sync_to_github()
+    return f"{symbol} を削除しました。"
+
+
+def _quote_text(symbol: str) -> str:
+    try:
+        quotes = fetch_quotes([symbol])
+    except StockClientError as exc:
+        return f"{symbol} の株価取得に失敗しました。\n{exc}"
+
+    quote = quotes[0]
+    if quote.change > 0:
+        direction = "▲"
+    elif quote.change < 0:
+        direction = "▼"
+    else:
+        direction = "→"
+
+    return (
+        f"株価: {quote.symbol} ({quote.short_name})\n"
+        f"現在値: {quote.price:.2f} {quote.currency}\n"
+        f"前日比: {direction} {abs(quote.change):.2f} ({quote.change_percent:+.2f}%)"
+    )
 
 
 def _source_key(event: dict[str, Any]) -> str:
@@ -176,6 +211,18 @@ def _handle_command(text: str, source_key: str) -> str:
         if " " in symbol:
             return "銘柄コードのみを送信してください。例: 7203.T"
         return _add_symbol(symbol)
+    if pending == "remove_symbol":
+        PENDING_ACTIONS.pop(source_key, None)
+        symbol = normalized.upper()
+        if " " in symbol:
+            return "銘柄コードのみを送信してください。例: 7203.T"
+        return _remove_symbol(symbol)
+    if pending == "quote_symbol":
+        PENDING_ACTIONS.pop(source_key, None)
+        symbol = normalized.upper()
+        if " " in symbol:
+            return "銘柄コードのみを送信してください。例: 7203.T"
+        return _quote_text(symbol)
 
     if normalized in ("一覧", "list"):
         symbols = _load_symbols()
@@ -187,6 +234,12 @@ def _handle_command(text: str, source_key: str) -> str:
     if normalized in ("追加", "add"):
         PENDING_ACTIONS[source_key] = "add_symbol"
         return "追加する銘柄コードを送信してください。例: 7203.T"
+    if normalized in ("削除", "remove"):
+        PENDING_ACTIONS[source_key] = "remove_symbol"
+        return "削除する銘柄コードを送信してください。例: 7203.T"
+    if normalized in ("株価", "price"):
+        PENDING_ACTIONS[source_key] = "quote_symbol"
+        return "確認する銘柄コードを送信してください。例: 7203.T"
 
     if normalized.startswith("追加 ") or lower.startswith("add "):
         symbol = normalized.split(" ", 1)[1].strip().upper()
@@ -196,13 +249,14 @@ def _handle_command(text: str, source_key: str) -> str:
 
     if normalized.startswith("削除 ") or lower.startswith("remove "):
         symbol = normalized.split(" ", 1)[1].strip().upper()
-        symbols = _load_symbols()
-        if symbol not in symbols:
-            return f"{symbol} は登録されていません。"
-        symbols = [s for s in symbols if s != symbol]
-        _save_symbols(symbols)
-        _sync_to_github()
-        return f"{symbol} を削除しました。"
+        if not symbol:
+            return "削除する銘柄コードを指定してください。例: 削除 7203.T"
+        return _remove_symbol(symbol)
+    if normalized.startswith("株価 ") or lower.startswith("price "):
+        symbol = normalized.split(" ", 1)[1].strip().upper()
+        if not symbol:
+            return "確認する銘柄コードを指定してください。例: 株価 7203.T"
+        return _quote_text(symbol)
 
     if normalized.startswith("しきい値 ") or lower.startswith("threshold "):
         raw = normalized.split(" ", 1)[1].strip()
