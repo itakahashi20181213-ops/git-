@@ -48,6 +48,20 @@ $env:LINE_TO="YOUR_USER_OR_GROUP_ID"
 python src/main.py
 ```
 
+### ローカルを1コマンドで実行
+
+`run_local.ps1` を用意してあるので、対話入力で実行できます。
+
+```powershell
+.\run_local.ps1
+```
+
+毎回の `pip install` を省略する場合:
+
+```powershell
+.\run_local.ps1 -SkipInstall
+```
+
 ## 銘柄の登録方法
 
 ### 方法1（推奨）

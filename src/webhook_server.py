@@ -17,6 +17,7 @@ STOCKS_FILE = ROOT_DIR / "config" / "stocks.txt"
 SETTINGS_FILE = ROOT_DIR / "config" / "settings.json"
 
 app = FastAPI()
+PENDING_ACTIONS: dict[str, str] = {}
 
 
 class ConfigUpdateError(Exception):
@@ -123,15 +124,39 @@ def _sync_to_github() -> None:
 def _help_text() -> str:
     return (
         "コマンド一覧\n"
+        "追加（次のメッセージで銘柄コード）\n"
         "追加 7203.T\n"
         "削除 7203.T\n"
         "一覧\n"
         "しきい値 2.0\n"
+        "キャンセル\n"
         "ヘルプ"
     )
 
 
-def _handle_command(text: str) -> str:
+def _add_symbol(symbol: str) -> str:
+    symbols = _load_symbols()
+    if symbol in symbols:
+        return f"{symbol} はすでに登録済みです。"
+    symbols.append(symbol)
+    _save_symbols(symbols)
+    _sync_to_github()
+    return f"{symbol} を追加しました。"
+
+
+def _source_key(event: dict[str, Any]) -> str:
+    source = event.get("source", {})
+    source_type = source.get("type", "unknown")
+    source_id = (
+        source.get("userId")
+        or source.get("groupId")
+        or source.get("roomId")
+        or "unknown"
+    )
+    return f"{source_type}:{source_id}"
+
+
+def _handle_command(text: str, source_key: str) -> str:
     command = text.strip()
     if not command:
         return _help_text()
@@ -140,6 +165,18 @@ def _handle_command(text: str) -> str:
     normalized = re.sub(r"\s+", " ", command.replace("\u3000", " ")).strip()
     lower = normalized.lower()
 
+    if normalized in ("キャンセル", "cancel"):
+        PENDING_ACTIONS.pop(source_key, None)
+        return "入力待ちをキャンセルしました。"
+
+    pending = PENDING_ACTIONS.get(source_key)
+    if pending == "add_symbol":
+        PENDING_ACTIONS.pop(source_key, None)
+        symbol = normalized.upper()
+        if " " in symbol:
+            return "銘柄コードのみを送信してください。例: 7203.T"
+        return _add_symbol(symbol)
+
     if normalized in ("一覧", "list"):
         symbols = _load_symbols()
         threshold = _load_threshold()
@@ -147,17 +184,15 @@ def _handle_command(text: str) -> str:
             return f"登録銘柄はありません。\nしきい値: {threshold:.2f}%"
         return "登録銘柄:\n" + "\n".join(symbols) + f"\nしきい値: {threshold:.2f}%"
 
+    if normalized in ("追加", "add"):
+        PENDING_ACTIONS[source_key] = "add_symbol"
+        return "追加する銘柄コードを送信してください。例: 7203.T"
+
     if normalized.startswith("追加 ") or lower.startswith("add "):
         symbol = normalized.split(" ", 1)[1].strip().upper()
         if not symbol:
             return "追加する銘柄コードを指定してください。例: 追加 7203.T"
-        symbols = _load_symbols()
-        if symbol in symbols:
-            return f"{symbol} はすでに登録済みです。"
-        symbols.append(symbol)
-        _save_symbols(symbols)
-        _sync_to_github()
-        return f"{symbol} を追加しました。"
+        return _add_symbol(symbol)
 
     if normalized.startswith("削除 ") or lower.startswith("remove "):
         symbol = normalized.split(" ", 1)[1].strip().upper()
@@ -219,7 +254,7 @@ async def callback(
         reply_token = event.get("replyToken")
         if not reply_token:
             continue
-        response_text = _handle_command(message.get("text", ""))
+        response_text = _handle_command(message.get("text", ""), _source_key(event))
         reply_line_message(reply_token, response_text)
 
     return {"status": "ok"}

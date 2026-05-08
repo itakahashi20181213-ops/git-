@@ -2,13 +2,21 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from stock_client import StockClientError, fetch_quotes
 
 
 STOCKS_FILE_PATH = Path(__file__).resolve().parent.parent / "config" / "stocks.txt"
 SETTINGS_FILE_PATH = Path(__file__).resolve().parent.parent / "config" / "settings.json"
+
+
+def _now_jst_text() -> str:
+    try:
+        return datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S JST")
+    except ZoneInfoNotFoundError:
+        # tzdata 未導入環境でも処理を止めず、ローカル時刻で継続する
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def load_symbols() -> list[str]:
@@ -54,7 +62,7 @@ def build_message() -> str | None:
     LINEに送る本文を生成する。
     ここだけ差し替えれば、送信内容を自由に変更できる。
     """
-    now = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S JST")
+    now = _now_jst_text()
     symbols = load_symbols()
     threshold = load_threshold_percent()
     try:
